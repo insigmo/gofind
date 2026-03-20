@@ -2,7 +2,6 @@ package finder
 
 import (
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,16 +13,17 @@ import (
 )
 
 var (
-	resultRe = regexp.MustCompile(
-		`(?s)<div[^>]*class="[^"]*\bSearchSnippet\b[^"]*"[^>]*>.*?<h2[^>]*>\s*<a[^>]*href="/([^"]+)"[^>]*>.*?</a>\s*</h2>.*?<p[^>]*class="[^"]*\bSearchSnippet-synopsis\b[^"]*"[^>]*>(.*?)</p>.*?<div[^>]*class="[^"]*\bSearchSnippet-infoLabel\b[^"]*"[^>]*>(.*?)</div>`,
-	)
-	tag = regexp.MustCompile(`<[^>]+>`)
-	ver = regexp.MustCompile(`\bv[^\s|]+`)
+	resultPattern      = regexp.MustCompile(`id="snippet-synopsis">(\n.*){12}`)
+	uriPattern         = regexp.MustCompile(`<a href="/(.*)\?`)
+	descriptionPattern = regexp.MustCompile(`>\n(.*)\n.*</p>`)
+	versionPattern     = regexp.MustCompile(`<strong>(.*)</strong> `)
 )
 
+const searchStart = 22000
+
 type Parser interface {
-	Find(query string) ([]models.Result, error)
-	Print(results []models.Result)
+	Find(query string) (models.Result, error)
+	Print(results models.Result)
 }
 
 type parser struct {
@@ -36,10 +36,10 @@ func New(httpClient *http.Client) Parser {
 	}
 }
 
-func (p *parser) Find(query string) ([]models.Result, error) {
+func (p *parser) Find(query string) (models.Result, error) {
 	body, err := p.fetchSearchResults(query)
 	if err != nil {
-		return nil, fmt.Errorf("error: failed to fetch results: %v", err)
+		return models.Result{}, fmt.Errorf("error: failed to fetch results: %v", err)
 	}
 	defer func(body io.ReadCloser) {
 		err = body.Close()
@@ -51,21 +51,10 @@ func (p *parser) Find(query string) ([]models.Result, error) {
 
 	results, err := p.Parse(body)
 	if err != nil {
-		return nil, fmt.Errorf("error: failed to parse results: %v", err)
+		return models.Result{}, fmt.Errorf("error: failed to parse results: %v", err)
 	}
 
-	if len(results) == 0 {
-		return nil, fmt.Errorf("no packages found for \"%s\"", query)
-	}
 	return results, nil
-}
-
-func (p *parser) Print(results []models.Result) {
-	for i, res := range results {
-		fmt.Printf("%d. %s\n", i+1, res.ImportPath)
-		fmt.Printf("\tLast Version: %s\n", res.Version)
-		fmt.Printf("\tSynopsis: %s\n", res.Synopsis)
-	}
 }
 
 func (p *parser) fetchSearchResults(query string) (io.ReadCloser, error) {
@@ -93,19 +82,23 @@ func (p *parser) fetchSearchResults(query string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-func (p *parser) Parse(r io.Reader) ([]models.Result, error) {
+func (p *parser) Parse(r io.Reader) (models.Result, error) {
 	b, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("read html: %w", err)
+		return models.Result{}, fmt.Errorf("read html: %w", err)
 	}
-	ms := resultRe.FindAllStringSubmatch(string(b), 1)
-	out := make([]models.Result, 0, len(ms))
-	for _, m := range ms {
-		out = append(out, models.Result{
-			ImportPath: m[1],
-			Synopsis:   strings.TrimSpace(html.UnescapeString(tag.ReplaceAllString(m[2], ""))),
-			Version:    ver.FindString(m[3]),
-		})
-	}
-	return out, nil
+
+	text := resultPattern.Find([]byte(b[searchStart:]))
+	return models.Result{
+		ImportPath: string(uriPattern.FindAllSubmatch(text, 1)[0][1]),
+		Synopsis:   strings.TrimSpace(string(descriptionPattern.FindAllSubmatch(text, 1)[0][1])),
+		Version:    string(versionPattern.FindAllSubmatch(text, 1)[0][1]),
+	}, nil
+}
+
+func (p *parser) Print(result models.Result) {
+	fmt.Println(result.ImportPath)
+	fmt.Printf("  Last Version: %s\n", result.Version)
+	fmt.Printf("  Synopsis: %s\n", result.Synopsis)
+	fmt.Printf("  Download: go get %s@%s\n", result.ImportPath, result.Version)
 }
