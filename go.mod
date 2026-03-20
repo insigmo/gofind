@@ -1,4 +1,4 @@
-module github.com/manus/go-find
+module github.com/insigmo/find
 
 go 1.25.0
 
