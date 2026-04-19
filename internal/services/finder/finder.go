@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/insigmo/find/internal/models"
+	"github.com/insigmo/gofind/internal/models"
 )
 
 var (

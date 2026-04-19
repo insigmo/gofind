@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/insigmo/find/internal/services/finder"
+	"github.com/insigmo/gofind/internal/services/finder"
 )
 
 const timeout = 15 * time.Second
