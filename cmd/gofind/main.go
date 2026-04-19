@@ -32,7 +32,7 @@ func main() {
 func getPackageName() string {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: find <query>")
+		fmt.Println("Usage: gofind <query>")
 		os.Exit(1)
 	}
 	return args[0]
